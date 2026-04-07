@@ -1,0 +1,11 @@
+pydicom==2.4.4
+numpy==1.23.5
+nibabel==5.1.0
+nilearn==0.10.2
+matplotlib==3.7.2
+dcmstack==0.8.0
+pandas==1.5.3
+pyradiomics==3.0.1
+sagemaker == 2.27.0
+boto3 == 1.17.18
+protobuf==3.20.3
