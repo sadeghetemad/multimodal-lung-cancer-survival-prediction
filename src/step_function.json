@@ -1,0 +1,102 @@
+{
+  "StartAt": "ProcessSubjects",
+  "States": {
+    "ProcessSubjects": {
+      "Type": "Map",
+      "ItemsPath": "$.subjects",
+      "MaxConcurrency": 10,
+      "Iterator": {
+        "StartAt": "RunProcessingJob",
+        "States": {
+          "RunProcessingJob": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::sagemaker:createProcessingJob.sync",
+            "Parameters": {
+              "ProcessingJobName.$": "States.Format('lung-cancer-diagnostic-{}', $)",
+              "ProcessingInputs": [
+                {
+                  "InputName": "DICOM",
+                  "S3Input": {
+                    "S3Uri.$": "States.Format('s3://nsclc-medical-image-data-811165582441-eu-west-2-an/ct-seg-image/{}', $)",
+                    "LocalPath": "/opt/ml/processing/input",
+                    "S3DataType": "S3Prefix",
+                    "S3InputMode": "File"
+                  }
+                }
+              ],
+              "ProcessingOutputConfig": {
+                "Outputs": [
+                  {
+                    "OutputName": "CT-Nifti",
+                    "S3Output": {
+                      "S3Uri": "s3://nsclc-medical-image-data-811165582441-eu-west-2-an/output/CT-Nifti",
+                      "LocalPath": "/opt/ml/processing/output/CT-Nifti",
+                      "S3UploadMode": "EndOfJob"
+                    }
+                  },
+                  {
+                    "OutputName": "CT-SEG",
+                    "S3Output": {
+                      "S3Uri": "s3://nsclc-medical-image-data-811165582441-eu-west-2-an/output/CT-SEG",
+                      "LocalPath": "/opt/ml/processing/output/CT-SEG",
+                      "S3UploadMode": "EndOfJob"
+                    }
+                  },
+                  {
+                    "OutputName": "PNG",
+                    "S3Output": {
+                      "S3Uri": "s3://nsclc-medical-image-data-811165582441-eu-west-2-an/output/PNG",
+                      "LocalPath": "/opt/ml/processing/output/PNG",
+                      "S3UploadMode": "EndOfJob"
+                    }
+                  }
+                ]
+              },
+              "AppSpecification": {
+                "ImageUri": "811165582441.dkr.ecr.eu-west-2.amazonaws.com/medical-image-processing:0.0.1-staging",
+                "ContainerEntrypoint": [
+                  "python3",
+                  "/opt/dcm2nifti_processing.py"
+                ],
+                "ContainerArguments.$": "States.Array('--subject', $, '--feature_group_name', $.feature_group, '--offline_store_s3uri', $.offline_store)"
+              },
+              "RoleArn": "arn:aws:iam::811165582441:role/lung_cancer_diagnostic",
+              "ProcessingResources": {
+                "ClusterConfig": {
+                  "InstanceCount": 1,
+                  "InstanceType": "ml.r5.large",
+                  "VolumeSizeInGB": 5
+                }
+              }
+            },
+            "Retry": [
+              {
+                "ErrorEquals": ["SageMaker.AmazonSageMakerException"],
+                "IntervalSeconds": 20,
+                "MaxAttempts": 5,
+                "BackoffRate": 1.5
+              }
+            ],
+            "Catch": [
+              {
+                "ErrorEquals": ["States.ALL"],
+                "ResultPath": "$.error",
+                "Next": "Failed"
+              }
+            ],
+            "End": true
+          },
+          "Failed": {
+            "Type": "Pass",
+            "Result": "Processing Failed",
+            "End": true
+          }
+        }
+      },
+      "Next": "Done"
+    },
+    "Done": {
+      "Type": "Succeed"
+    }
+  }
+}
