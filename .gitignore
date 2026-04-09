@@ -46,3 +46,5 @@ htmlcov/
 # Data
 *.csv
 *.png
+
+artifacts
