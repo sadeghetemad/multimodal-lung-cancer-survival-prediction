@@ -4,6 +4,8 @@ import numpy as np
 import joblib
 import time
 import os
+import tarfile
+import shutil
 
 import sagemaker
 from sagemaker.session import Session
@@ -16,7 +18,6 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from sklearn.decomposition import PCA
 from sklearn.metrics import accuracy_score, f1_score,  precision_score, recall_score, confusion_matrix
-
 
 # ==============================
 # CONFIG
@@ -235,9 +236,38 @@ def evaluate(predictor, X_test, y_test):
     print("Accuracy:", accuracy_score(y_test, preds))
     print("F1:", f1_score(y_test, preds))
     print("Precision:", precision_score(y_test, preds, average='weighted'))
-    print("Precision:", recall_score(y_test, preds, average='weighted'))
+    print("Recall:", recall_score(y_test, preds, average='weighted'))
     print("Confusion Matrix:", confusion_matrix(y_test, preds))
 
+
+# ==============================
+# SAVE TRAINED MODEL
+# ==============================
+def save_trained_model(estimator):
+
+    print("Downloading trained model...")    
+
+    s3 = boto3.client("s3", region_name=REGION)
+
+    model_s3_path = estimator.model_data
+
+    bucket = model_s3_path.split("/")[2]
+    key = "/".join(model_s3_path.split("/")[3:])
+
+    os.makedirs("artifacts", exist_ok=True)
+
+    tar_path = "artifacts/model.tar.gz"
+    s3.download_file(bucket, key, tar_path)
+
+    with tarfile.open(tar_path, "r:gz") as tar:
+        tar.extractall(path="artifacts")
+
+    src = "artifacts/xgboost-model"
+    dst = "artifacts/xgboost_model.bin"
+
+    shutil.copy(src, dst)
+
+    print("Model saved as raw binary ✅")
 
 # ==============================
 # MAIN PIPELINE
@@ -254,6 +284,10 @@ def run():
 
     # 2. preprocess
     X, y = preprocess(df)
+
+    # save feature order
+    feature_order = list(X.columns)
+    save_artifact(feature_order, "feature_order.joblib")
 
     # 3. split
     X_trainval, X_test, y_trainval, y_test = train_test_split(
@@ -276,8 +310,9 @@ def run():
     train_df = pd.concat([y_train.reset_index(drop=True), pd.DataFrame(X_train_pca)], axis=1)
     val_df = pd.concat([y_val.reset_index(drop=True), pd.DataFrame(X_val_pca)], axis=1)
 
-    # 7. train
+    # 7. train and save model
     estimator = train_model(train_df, val_df)
+    save_trained_model(estimator)
 
     # 8. deploy
     predictor, endpoint = deploy_model(estimator)
